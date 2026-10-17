@@ -1,6 +1,6 @@
-# OWASP Pentesting Manual — Tools & Methodology
+# OWASP Pentesting Manual — Tools & Methodology (Kali Linux edition)
 
-A personal field manual for learning web application security the OWASP way — the methodology, the terminal toolkit, and the steps, in the order you actually use them.
+A personal field manual for learning web application security the OWASP way — the methodology, the terminal toolkit, the wordlists, and the steps, in the order you actually use them. Paths and install commands assume **Kali Linux** (they also work on Parrot OS with minor path changes).
 
 ---
 
@@ -73,13 +73,110 @@ Your everyday kit, grouped by what you reach for it to do. Most are pre-installe
 | XSStrike / dalfox | Exploitation | Detect and craft cross-site scripting payloads. |
 | hydra / medusa | Passwords | Online brute-force against login forms and services. |
 | john / hashcat | Passwords | Offline cracking of captured password hashes. |
-| wordlists (SecLists) | Support | The standard collection of wordlists for everything above. |
+| wordlists (SecLists) | Support | The standard collection of wordlists for everything above (see the Wordlists section). |
 | curl / wget | Utility | Send raw crafted HTTP requests from the terminal. |
 | jq | Utility | Parse and filter JSON from API responses. |
 | openssl | Crypto | Inspect certificates, test TLS, decode/encode material. |
 | testssl.sh / sslscan | Crypto | Audit a server's TLS configuration and cipher support. |
 
 Don't try to learn all of these at once. Burp + nmap + ffuf + sqlmap will carry you through most of the methodology; add the rest as specific needs come up.
+
+---
+
+## Wordlists
+
+Wordlists are the fuel for every brute-force, fuzzing, and discovery step in this manual. The right list for the job matters more than the tool: a tiny focused list finishes fast and finds the common stuff; a huge list is thorough but slow and noisy. The skill is picking the smallest list that will still hit.
+
+### Where they live on Kali
+
+Kali keeps wordlists under **`/usr/share/wordlists/`**. Out of the box this is mostly a set of symlinks into each tool's own folder:
+
+| Path | What's there |
+| --- | --- |
+| `/usr/share/wordlists/rockyou.txt.gz` | The famous ~14M-password leak list. **Ships gzipped — you must extract it before use** (see below). |
+| `/usr/share/wordlists/dirb/` | dirb's lists: `common.txt`, `big.txt`, `small.txt`, etc. Good quick directory lists. |
+| `/usr/share/wordlists/dirbuster/` | dirbuster's lists: `directory-list-2.3-medium.txt` (the workhorse), `-small`, `-lowercase` variants. |
+| `/usr/share/wordlists/wfuzz/` | wfuzz's bundled lists (injections, general, others). |
+| `/usr/share/wordlists/fasttrack.txt` | ~250 very common/default passwords — great fast first pass. |
+| `/usr/share/wordlists/metasploit/` | Metasploit's default-credential and service lists. |
+| `/usr/share/wordlists/nmap.lst` | nmap's password list. |
+| `/usr/share/wordlists/seclists` | Symlink to SecLists **if installed** (see below). |
+| `/usr/share/john/password.lst` | John the Ripper's small built-in list. |
+
+**The two gotchas that trip everyone up on a fresh Kali:**
+
+1. **`rockyou.txt` isn't ready to use** — it's compressed. Extract it once:
+   ```bash
+   sudo gunzip /usr/share/wordlists/rockyou.txt.gz          # replaces the .gz
+   # or keep the archive too:
+   sudo gunzip -k /usr/share/wordlists/rockyou.txt.gz
+   # verify:
+   wc -l /usr/share/wordlists/rockyou.txt                   # ~14,344,391 lines
+   ```
+2. **SecLists may not be installed.** It's the single most important collection for web testing, and many commands in this manual expect it at `/usr/share/seclists/`. Install it (next section) before you rely on those paths.
+
+### Getting the essentials installed
+
+```bash
+# SecLists — the big one. Recommended: install via apt.
+sudo apt update && sudo apt install -y seclists
+#   -> installs to /usr/share/seclists/
+#   -> also symlinked at /usr/share/wordlists/seclists
+
+# Prefer the newest version? Clone it instead (or alongside):
+sudo git clone https://github.com/danielmiessler/SecLists.git /usr/share/seclists
+
+# PayloadsAllTheThings — payload reference + some fuzzing lists
+git clone https://github.com/swisskyrepo/PayloadsAllTheThings.git ~/tools/PayloadsAllTheThings
+
+# FuzzDB — attack patterns and discovery lists
+sudo apt install -y fuzzdb      # lands in /usr/share/fuzzdb/
+#   or: git clone https://github.com/fuzzdb-project/fuzzdb.git
+
+# The `wordlists` helper (Kali metapackage + overview command)
+sudo apt install -y wordlists
+wordlists                        # prints an overview of installed lists and their paths
+#   -> this metapackage also pulls in many of the lists above and extracts rockyou for you
+```
+
+For bigger / higher-signal discovery and subdomain lists later on, the **Assetnote wordlists** at `wordlists.assetnote.io` are excellent — download individual files with `wget` as you need them rather than grabbing everything.
+
+### Which wordlist for which job
+
+Reach for these first. Paths assume SecLists is installed at `/usr/share/seclists/`.
+
+| Job | Go-to wordlist | Path |
+| --- | --- | --- |
+| Directory/file discovery — **quick pass** | `common.txt` (~4.7k entries) | `…/seclists/Discovery/Web-Content/common.txt` |
+| Directory/file discovery — **thorough** | `directory-list-2.3-medium.txt` (~220k) | `…/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt` |
+| Directories only (high-signal) | `raft-medium-directories.txt` | `…/seclists/Discovery/Web-Content/raft-medium-directories.txt` |
+| Files / backups / source leaks | `raft-medium-files.txt` | `…/seclists/Discovery/Web-Content/raft-medium-files.txt` |
+| API endpoint discovery | `api/api-endpoints.txt` | `…/seclists/Discovery/Web-Content/api/` |
+| Parameter name fuzzing | `burp-parameter-names.txt` | `…/seclists/Discovery/Web-Content/burp-parameter-names.txt` |
+| Subdomain enumeration — fast | `subdomains-top1million-5000.txt` | `…/seclists/Discovery/DNS/subdomains-top1million-5000.txt` |
+| Subdomain enumeration — deep | `subdomains-top1million-110000.txt` | `…/seclists/Discovery/DNS/` |
+| Passwords — fast first pass | `fasttrack.txt` / top-1000 list | `/usr/share/wordlists/fasttrack.txt` · `…/seclists/Passwords/Common-Credentials/10-million-password-list-top-1000.txt` |
+| Passwords — full brute | `rockyou.txt` | `/usr/share/wordlists/rockyou.txt` (after extracting) |
+| Default credentials | `Default-Credentials/` | `…/seclists/Passwords/Default-Credentials/` |
+| Usernames | `top-usernames-shortlist.txt` | `…/seclists/Usernames/top-usernames-shortlist.txt` |
+| LFI / path traversal payloads | `LFI/` lists | `…/seclists/Fuzzing/LFI/` |
+| Special chars / injection probes | `special-chars.txt` | `…/seclists/Fuzzing/special-chars.txt` |
+
+**Rule of thumb:** start with the *quick* / *shortlist* option on every target. Only escalate to the medium/large list for a parameter or path that already looks interesting. A 220k-line run against everything wastes time and lights up the logs.
+
+### Finding any wordlist fast
+
+When a tutorial names a list and you're not sure you have it:
+
+```bash
+# fastest, if plocate's db is current (run `sudo updatedb` once first)
+locate <keyword> | grep -i wordlist
+locate subdomains-top1million
+
+# always works, no db needed
+find /usr/share -iname '*subdomain*'
+find /usr/share -iname '*.txt' -path '*Discovery*'
+```
 
 ---
 
@@ -101,7 +198,7 @@ The tool you reach for depends on **what kind of vulnerability it is**, which sp
 | Cracking captured hashes | **hashcat** / **john** | Offline, after you've obtained the hashes. hashcat for GPU speed. |
 | SSRF | **Burp** (Collaborator) | Put an internal/collaborator URL in any field that fetches; watch for the callback. |
 | Server-side template injection | **tplmap** + manual | Probe with `{{7*7}}`; if it returns `49`, you're in. |
-| Path traversal / LFI | **ffuf** / Burp + manual | Fuzz with `../` payloads and traversal wordlists. |
+| Path traversal / LFI | **ffuf** / Burp + manual | Fuzz with `../` payloads and traversal wordlists (`…/seclists/Fuzzing/LFI/`). |
 | XXE | **Burp** + manual | Manual XML payloads; no good pure-auto tool. |
 | Content / directory discovery | **ffuf** / gobuster / dirsearch | Brute-force paths with a wordlist. |
 | Subdomain enumeration | **subfinder** / amass | `subfinder -d domain \| httpx` to find live ones. |
@@ -117,7 +214,7 @@ The thing to internalize: **automated tools are for confirming and exploiting, n
 
 ## The methodology (OWASP WSTG, phase by phase)
 
-Walk these in order. Each phase lists its goal, what you're hunting for, the tools, and starting commands. Replace `TARGET`, `example.com`, or `URL` with your authorized target. All commands assume a lab or permitted scope.
+Walk these in order. Each phase lists its goal, what you're hunting for, the tools, and starting commands. Replace `TARGET`, `example.com`, or `URL` with your authorized target. All commands assume a lab or permitted scope and SecLists installed at `/usr/share/seclists/`.
 
 ### 1. Information gathering (recon)
 
@@ -130,12 +227,16 @@ wafw00f https://example.com
 
 # Subdomains, then find which are live
 subfinder -d example.com | httpx -silent
+#   deeper DNS brute with a wordlist:
+#   ffuf -u https://FUZZ.example.com -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt
 
 # Port + service scan
 nmap -sV -sC -p- example.com
 
-# Directory & file discovery
+# Directory & file discovery — quick pass first
 ffuf -u https://example.com/FUZZ -w /usr/share/seclists/Discovery/Web-Content/common.txt
+#   escalate on anything interesting:
+#   ffuf -u https://example.com/FUZZ -w /usr/share/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt
 ```
 
 Also review the page source, `robots.txt`, `sitemap.xml`, JavaScript files (for API endpoints and keys), and Google dorks (`site:example.com`).
@@ -161,7 +262,7 @@ Inspect response headers for missing security headers (CSP, HSTS, X-Frame-Option
 
 *Goal:* test how accounts and roles are defined. *Looking for:* username enumeration, weak registration rules, predictable account IDs, role definitions.
 
-In Burp, compare responses to valid vs invalid usernames at login, registration, and password-reset. A different message, status code, or response time usually means usernames are enumerable. Map every role the app has and what each is supposed to access — you'll need this for authorization testing.
+In Burp, compare responses to valid vs invalid usernames at login, registration, and password-reset. A different message, status code, or response time usually means usernames are enumerable. Map every role the app has and what each is supposed to access — you'll need this for authorization testing. A username shortlist to test enumeration: `/usr/share/seclists/Usernames/top-usernames-shortlist.txt`.
 
 ### 4. Authentication testing
 
@@ -169,7 +270,13 @@ In Burp, compare responses to valid vs invalid usernames at login, registration,
 
 ```bash
 # Online brute-force a login form (authorized targets only)
-hydra -l admin -P /usr/share/seclists/Passwords/rockyou.txt \
+# Fast first pass with a tiny high-hit list:
+hydra -l admin -P /usr/share/wordlists/fasttrack.txt \
+  example.com http-post-form \
+  "/login:username=^USER^&password=^PASS^:Invalid"
+
+# Full run with rockyou (after you've extracted it):
+hydra -l admin -P /usr/share/wordlists/rockyou.txt \
   example.com http-post-form \
   "/login:username=^USER^&password=^PASS^:Invalid"
 ```
@@ -201,6 +308,9 @@ commix -u "https://example.com/ping?host=127.0.0.1"
 
 # Reflected/stored XSS
 dalfox url "https://example.com/search?q=test"
+
+# Path traversal / LFI fuzzing
+ffuf -u "https://example.com/?file=FUZZ" -w /usr/share/seclists/Fuzzing/LFI/LFI-Jhaddix.txt
 ```
 
 Manually, probe each input with markers: `'` and `"` (SQLi), `<b>test</b>` or `"><svg onload=alert(1)>` (XSS), `{{7*7}}` (template injection), `../../etc/passwd` (path traversal), and an internal URL like `http://127.0.0.1` in any field that fetches a URL (SSRF). Use PayloadsAllTheThings for the full set.
@@ -255,7 +365,7 @@ Map each category back to the methodology phase where you test for it — A01 is
 Run this top to bottom on any authorized target. Tick the boxes as you go.
 
 - [ ] Confirm scope: you have written permission and know exactly what's in and out of bounds.
-- [ ] Set up: start Burp/ZAP as proxy, open your notes file, define the target.
+- [ ] Set up: start Burp/ZAP as proxy, open your notes file, define the target, confirm your wordlists are installed and `rockyou.txt` is extracted.
 - [ ] Recon: fingerprint stack, enumerate subdomains, scan ports, discover content (phase 1).
 - [ ] Map the app: every page, input, parameter, role, and multi-step flow.
 - [ ] Config review: scan for misconfigs, exposed files, missing headers (phase 2).
@@ -286,6 +396,6 @@ Run this top to bottom on any authorized target. Tick the boxes as you go.
 - **Learn to script.** Once a technique is manual-mapped, automate it with a little Python or Bash. Understanding *why* a tool works beats memorizing flags.
 - **Certification path, roughly in order:** CompTIA Security+ (foundations) → eJPT (hands-on entry) → PNPT or OSCP (serious practical pentesting). Pick based on your goal — none is required to start learning.
 - **Read other people's work.** Public bug-bounty writeups and HackerOne reports show how real bugs are found and chained.
-- **Grow this manual.** Every time you learn a new tool, payload, or trick, add it to the matching section. A manual you maintain is worth ten you downloaded.
+- **Grow this manual.** Every time you learn a new tool, payload, wordlist, or trick, add it to the matching section. A manual you maintain is worth ten you downloaded.
 
-Start tonight: install Juice Shop with Docker, point Burp at it, and run phase 1. You'll hit your first finding faster than you'd expect.
+Start tonight: install Juice Shop with Docker, point Burp at it, extract rockyou, install SecLists, and run phase 1. You'll hit your first finding faster than you'd expect.
